@@ -1,0 +1,9 @@
+{
+  "name": "yemot-currency-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hebrew currency exchange-rate IVR API for Yemot HaMashiach, deployed on Vercel",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": { "start": "node api/yemot.js" }
+}
