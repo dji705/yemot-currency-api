@@ -88,7 +88,7 @@ export default async function handler(req, res) {
       `להקשת ${index + 1} עבור ${currency.name}`
     ).join(". ");
     return res.end(yemotResponse(
-      `שערי מטבע מול השקל הישראלי. ${menu}. להקשת כוכבית חזרו לתפריט הראשי.`,
+      `לשערי מטבע. ${menu}. להקשת כוכבית חזרו לתפריט הראשי.`,
       { menu: true, min: 1, max: 2, timeout: 7 }
     ));
   }
