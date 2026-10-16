@@ -1,11 +1,11 @@
 const API_PRIMARY = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies";
 const API_FALLBACK = "https://latest.currency-api.pages.dev/v1/currencies";
 
+// The menu lists foreign currencies; every result is converted to Israeli shekels.
 const CURRENCIES = [
   { code: "usd", name: "דולר אמריקאי" },
   { code: "eur", name: "אירו" },
   { code: "gbp", name: "לירה שטרלינג" },
-  { code: "ils", name: "שקל ישראלי" },
   { code: "chf", name: "פרנק שווייצרי" },
   { code: "cad", name: "דולר קנדי" },
   { code: "aud", name: "דולר אוסטרלי" },
@@ -28,7 +28,6 @@ function getQuery(req) {
   const url = new URL(req.url, `https://${req.headers.host || "localhost"}`);
   return {
     currency: (url.searchParams.get("currency") || "").toLowerCase().trim(),
-    from: (url.searchParams.get("from") || "usd").toLowerCase().trim(),
     amount: Number(url.searchParams.get("amount") || 1),
     input: url.searchParams.get("ApiPhoneInput") || url.searchParams.get("Digits") || ""
   };
@@ -82,38 +81,36 @@ export default async function handler(req, res) {
 
   const q = getQuery(req);
   let selected = CURRENCIES.find(currency => currency.code === q.currency);
-
   if (!selected && q.input) selected = currencyByInput(q.input);
 
   if (!selected) {
     const menu = CURRENCIES.map((currency, index) =>
       `להקשת ${index + 1} עבור ${currency.name}`
-    ).join(", ");
+    ).join(". ");
     return res.end(yemotResponse(
-      `שערי מטבע. ${menu}. להקשת כוכבית חזרו לתפריט הראשי.`,
-      { menu: true, min: 1, max: 1, timeout: 7 }
+      `שערי מטבע מול השקל הישראלי. ${menu}. להקשת כוכבית חזרו לתפריט הראשי.`,
+      { menu: true, min: 1, max: 2, timeout: 7 }
     ));
   }
 
   try {
-    const base = CURRENCIES.find(currency => currency.code === q.from)
-      || { code: "usd", name: "דולר אמריקאי" };
-    const { rates, date } = await fetchRates(base.code);
-    const rate = rates[selected.code];
-
-    if (typeof rate !== "number" || !Number.isFinite(rate)) {
+    // The API gives the value of one shekel in foreign currency. Invert it
+    // to get the value of one foreign currency unit in shekels.
+    const { rates, date } = await fetchRates("ils");
+    const shekelPerUnit = rates[selected.code];
+    if (typeof shekelPerUnit !== "number" || !Number.isFinite(shekelPerUnit) || shekelPerUnit <= 0) {
       res.statusCode = 404;
       return res.end(say(`לא נמצא שער עבור ${selected.name}`));
     }
 
     const amount = Number.isFinite(q.amount) && q.amount > 0 ? q.amount : 1;
-    const total = amount * rate;
+    const total = amount / shekelPerUnit;
     const amountText = amount === 1
-      ? `שער דולר אמריקאי אחד`
-      : `שער ${formatRate(amount)} ${base.name}`;
+      ? `יחידה אחת של ${selected.name}`
+      : `${formatRate(amount)} ${selected.name}`;
 
     return res.end(say(
-      `${amountText} שווה ${formatRate(total)} ${selected.name}. תאריך הנתונים ${date}. להקשת כוכבית חזרו לתפריט הראשי.`
+      `${amountText} שווה ${formatRate(total)} שקלים חדשים. תאריך הנתונים ${date}. להקשת כוכבית חזרו לתפריט הראשי.`
     ));
   } catch {
     res.statusCode = 503;
