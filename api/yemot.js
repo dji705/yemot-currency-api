@@ -89,7 +89,7 @@ export default async function handler(req, res) {
     ).join(". ");
     return res.end(yemotResponse(
       `לשערי מטבע. ${menu}. להקשת כוכבית חזרו לתפריט הראשי.`,
-      { menu: true, min: 1, max: 2, timeout: 7 }
+      { menu: true, min: 1, max: 1, timeout: 7 }
     ));
   }
 
