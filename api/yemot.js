@@ -1,7 +1,6 @@
 const API_PRIMARY = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies";
 const API_FALLBACK = "https://latest.currency-api.pages.dev/v1/currencies";
 
-// The menu lists foreign currencies; every result is converted to Israeli shekels.
 const CURRENCIES = [
   { code: "usd", name: "דולר אמריקאי" },
   { code: "eur", name: "אירו" },
@@ -16,25 +15,62 @@ const CURRENCIES = [
   { code: "thb", name: "בהט תאילנדי" }
 ];
 
-const say = (text) => `read=${text}.`;
+// Yemot expects read text as t-/n- parts, followed by the input variable.
+// This is the same response structure used in the user's other IVR API.
+function numericParts(raw) {
+  const normalized = String(raw).replace(/,/g, "");
+  if (normalized.includes(".")) {
+    const [whole, fraction] = normalized.split(".");
+    return [...numericParts(whole), "t-נקודה", ...fraction.split("").map(digit => `n-${digit}`)];
+  }
+  const value = Number(normalized);
+  if (!Number.isSafeInteger(value) || value < 0) return [`t-${raw}`];
+  if (value <= 2147483647) return [`n-${value}`];
+  return [`t-${raw}`];
+}
 
-function yemotResponse(text, options = {}) {
-  const { menu = false, min = 1, max = 1, timeout = 7 } = options;
-  if (!menu) return say(text);
-  return `${say(text)}n-123.t-בחרו מטבע=wm_nav,no,${min},${max},${timeout},Digits,no,no,,,1,Ok`;
+function readParts(text) {
+  const input = String(text).replace(/[=;!?]/g, " ").replace(/\.(?!\d)/g, " ");
+  const pattern = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g;
+  const parts = [];
+  let cursor = 0;
+  for (const match of input.matchAll(pattern)) {
+    const index = match.index ?? 0;
+    const phrase = input.slice(cursor, index).trim();
+    if (phrase) parts.push(`t-${phrase.replace(/\s+/g, " ")}`);
+    parts.push(...numericParts(match[0]));
+    cursor = index + match[0].length;
+  }
+  const tail = input.slice(cursor).trim();
+  if (tail) parts.push(`t-${tail.replace(/\s+/g, " ")}`);
+  return parts.join(".");
+}
+
+function response(res, text, { collect = false, inputName = "wm_nav", min = 1, max = 1, timeout = 5 } = {}) {
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  const speech = `read=${readParts(text)}`;
+  if (!collect) return res.end(speech);
+  return res.end(`${speech}=${inputName},no,${min},${max},${timeout},Digits,no,no,,,1,Ok`);
 }
 
 function getQuery(req) {
   const url = new URL(req.url, `https://${req.headers.host || "localhost"}`);
   const body = req.body && typeof req.body === "object" ? req.body : {};
-  const get = (key) => url.searchParams.get(key);
+  const get = key => url.searchParams.get(key);
+  let input = "";
+  for (const key of ["wm_nav", "ApiPhoneInput", "Digits", "digits", "Choice", "ChoiceYesNo", "val", "choice"]) {
+    const value = get(key) ?? body[key];
+    if (value !== undefined && value !== null && String(value) !== "") {
+      input = String(value).trim();
+      break;
+    }
+  }
   return {
+    url,
+    input,
     currency: String(get("currency") || body.currency || "").toLowerCase().trim(),
-    amount: Number(get("amount") || body.amount || 1),
-    input: String(
-      get("ApiPhoneInput") || get("Digits") || get("digits") ||
-      body.ApiPhoneInput || body.Digits || body.digits || body.choice || ""
-    ).trim()
+    amount: Number(get("amount") || body.amount || 1)
   };
 }
 
@@ -68,52 +104,49 @@ function formatRate(value) {
 }
 
 function currencyByInput(input) {
-  const value = String(input).replace(/[^\d]/g, "");
+  const value = String(input).replace(/\D/g, "");
   const number = Number(value);
   return Number.isInteger(number) && number >= 1 && number <= CURRENCIES.length
     ? CURRENCIES[number - 1]
     : null;
 }
 
+function menuText() {
+  return "לשער הדולר הקישו 1. לשער האירו הקישו 2. ללירה שטרלינג הקישו 3. לפרנק השווייצרי הקישו 4. לדולר הקנדי הקישו 5. לדולר האוסטרלי הקישו 6. לין היפני הקישו 7. ללירה הטורקית הקישו 8. לזלוטי הפולני הקישו 9. לקורונה הצ'כית הקישו 10. לבהט התאילנדי הקישו 11.";
+}
+
 export default async function handler(req, res) {
-  res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  res.setHeader("Cache-Control", "public, s-maxage=900, stale-while-revalidate=3600");
-
   const q = getQuery(req);
-  let selected = CURRENCIES.find(currency => currency.code === q.currency);
-  if (!selected && q.input) selected = currencyByInput(q.input);
+  const url = q.url;
 
+  // Star returns to the menu.
+  if ([...url.searchParams.values()].some(value => String(value).includes("*")) ||
+      Object.values(req.body && typeof req.body === "object" ? req.body : {}).some(value => String(value).includes("*"))) {
+    return response(res, menuText(), { collect: true, inputName: "wm_nav", min: 1, max: 2, timeout: 5 });
+  }
+
+  const selected = CURRENCIES.find(currency => currency.code === q.currency) || currencyByInput(q.input);
   if (!selected) {
-    const menu = CURRENCIES.map((currency, index) =>
-      `להקשת ${index + 1} עבור ${currency.name}`
-    ).join(". ");
-    return res.end(yemotResponse(
-      `לשערי מטבע. ${menu}. להקשת כוכבית חזרו לתפריט הראשי.`,
-      { menu: true, min: 1, max: 1, timeout: 7 }
-    ));
+    return response(res, menuText(), { collect: true, inputName: "wm_nav", min: 1, max: 2, timeout: 5 });
   }
 
   try {
-    // The API gives the value of one shekel in foreign currency. Invert it
-    // to get the value of one foreign currency unit in shekels.
+    // In the ILS rates table, one ILS is expressed as a fraction of each foreign currency.
+    // Invert the rate to obtain foreign-currency units in Israeli shekels.
     const { rates, date } = await fetchRates("ils");
-    const shekelPerUnit = rates[selected.code];
-    if (typeof shekelPerUnit !== "number" || !Number.isFinite(shekelPerUnit) || shekelPerUnit <= 0) {
-      res.statusCode = 404;
-      return res.end(say(`לא נמצא שער עבור ${selected.name}`));
+    const shekelValue = rates[selected.code];
+    if (typeof shekelValue !== "number" || !Number.isFinite(shekelValue) || shekelValue <= 0) {
+      return response(res, `לא נמצא שער עבור ${selected.name}. ${menuText()}`, { collect: true, inputName: "wm_nav", min: 1, max: 2, timeout: 5 });
     }
-
     const amount = Number.isFinite(q.amount) && q.amount > 0 ? q.amount : 1;
-    const total = amount / shekelPerUnit;
-    const amountText = amount === 1
-      ? `יחידה אחת של ${selected.name}`
-      : `${formatRate(amount)} ${selected.name}`;
-
-    return res.end(say(
-      `${amountText} שווה ${formatRate(total)} שקלים חדשים. תאריך הנתונים ${date}. להקשת כוכבית חזרו לתפריט הראשי.`
-    ));
+    const total = amount / shekelValue;
+    const amountText = amount === 1 ? `יחידה אחת של ${selected.name}` : `${formatRate(amount)} ${selected.name}`;
+    return response(res, `${amountText} שווה ${formatRate(total)} שקלים חדשים. תאריך הנתונים ${date}. להקשת מטבע נוסף, הקישו כוכבית.`, {
+      collect: true, inputName: "wm_nav", min: 1, max: 2, timeout: 5
+    });
   } catch {
-    res.statusCode = 503;
-    return res.end(say("מצטערים, לא ניתן לקבל כעת שערי מטבע. נסו שוב מאוחר יותר."));
+    return response(res, `לא ניתן לקבל כעת שערי מטבע. נסו שוב. ${menuText()}`, {
+      collect: true, inputName: "wm_nav", min: 1, max: 2, timeout: 5
+    });
   }
 }
