@@ -26,10 +26,15 @@ function yemotResponse(text, options = {}) {
 
 function getQuery(req) {
   const url = new URL(req.url, `https://${req.headers.host || "localhost"}`);
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const get = (key) => url.searchParams.get(key);
   return {
-    currency: (url.searchParams.get("currency") || "").toLowerCase().trim(),
-    amount: Number(url.searchParams.get("amount") || 1),
-    input: url.searchParams.get("ApiPhoneInput") || url.searchParams.get("Digits") || ""
+    currency: String(get("currency") || body.currency || "").toLowerCase().trim(),
+    amount: Number(get("amount") || body.amount || 1),
+    input: String(
+      get("ApiPhoneInput") || get("Digits") || get("digits") ||
+      body.ApiPhoneInput || body.Digits || body.digits || body.choice || ""
+    ).trim()
   };
 }
 
@@ -73,11 +78,6 @@ function currencyByInput(input) {
 export default async function handler(req, res) {
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Cache-Control", "public, s-maxage=900, stale-while-revalidate=3600");
-
-  if (req.method !== "GET") {
-    res.statusCode = 405;
-    return res.end(say("השירות תומך בבקשת GET בלבד"));
-  }
 
   const q = getQuery(req);
   let selected = CURRENCIES.find(currency => currency.code === q.currency);
