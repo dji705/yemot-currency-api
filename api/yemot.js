@@ -10,9 +10,7 @@ const CURRENCIES = [
   { code: "aud", name: "דולר אוסטרלי" },
   { code: "jpy", name: "ין יפני" },
   { code: "try", name: "לירה טורקית" },
-  { code: "pln", name: "זלוטי פולני" },
-  { code: "czk", name: "קורונה צ'כית" },
-  { code: "thb", name: "בהט תאילנדי" }
+  { code: "pln", name: "זלוטי פולני" }
 ];
 
 // Yemot expects read text as t-/n- parts, followed by the input variable.
@@ -122,12 +120,12 @@ export default async function handler(req, res) {
   // Star returns to the menu.
   if ([...url.searchParams.values()].some(value => String(value).includes("*")) ||
       Object.values(req.body && typeof req.body === "object" ? req.body : {}).some(value => String(value).includes("*"))) {
-    return response(res, menuText(), { collect: true, inputName: "wm_nav", min: 1, max: 2, timeout: 5 });
+    return response(res, menuText(), { collect: true, inputName: "wm_nav", min: 1, max: 1, timeout: 5 });
   }
 
   const selected = CURRENCIES.find(currency => currency.code === q.currency) || currencyByInput(q.input);
   if (!selected) {
-    return response(res, menuText(), { collect: true, inputName: "wm_nav", min: 1, max: 2, timeout: 5 });
+    return response(res, menuText(), { collect: true, inputName: "wm_nav", min: 1, max: 1, timeout: 5 });
   }
 
   try {
@@ -136,17 +134,17 @@ export default async function handler(req, res) {
     const { rates, date } = await fetchRates("ils");
     const shekelValue = rates[selected.code];
     if (typeof shekelValue !== "number" || !Number.isFinite(shekelValue) || shekelValue <= 0) {
-      return response(res, `לא נמצא שער עבור ${selected.name}. ${menuText()}`, { collect: true, inputName: "wm_nav", min: 1, max: 2, timeout: 5 });
+      return response(res, `לא נמצא שער עבור ${selected.name}. ${menuText()}`, { collect: true, inputName: "wm_nav", min: 1, max: 1, timeout: 5 });
     }
     const amount = Number.isFinite(q.amount) && q.amount > 0 ? q.amount : 1;
     const total = amount / shekelValue;
     const amountText = amount === 1 ? `יחידה אחת של ${selected.name}` : `${formatRate(amount)} ${selected.name}`;
     return response(res, `${amountText} שווה ${formatRate(total)} שקלים חדשים. תאריך הנתונים ${date}. להקשת מטבע נוסף, הקישו כוכבית.`, {
-      collect: true, inputName: "wm_nav", min: 1, max: 2, timeout: 5
+      collect: true, inputName: "wm_nav", min: 1, max: 1, timeout: 5
     });
   } catch {
     return response(res, `לא ניתן לקבל כעת שערי מטבע. נסו שוב. ${menuText()}`, {
-      collect: true, inputName: "wm_nav", min: 1, max: 2, timeout: 5
+      collect: true, inputName: "wm_nav", min: 1, max: 1, timeout: 5
     });
   }
 }
