@@ -49,21 +49,21 @@ function response(res, text, { collect = false, inputName = "wm_nav", min = 1, m
   res.setHeader("Cache-Control", "no-store");
   const speech = `read=${readParts(text)}`;
   if (!collect) return res.end(speech);
-  return res.end(`${speech}=${inputName},no,${min},${max},${timeout},Digits,no,no,,,1,Ok`);
+  return res.end(`${speech}=${inputName},no,${max},${min},${timeout},Digits,no,no,,,1,Ok`);
 }
 
 function getQuery(req) {
   const url = new URL(req.url, `https://${req.headers.host || "localhost"}`);
   const body = req.body && typeof req.body === "object" ? req.body : {};
   const get = key => url.searchParams.get(key);
-  let input = "";
-  for (const key of ["wm_nav", "ApiPhoneInput", "Digits", "digits", "Choice", "ChoiceYesNo", "val", "choice"]) {
-    const value = get(key) ?? body[key];
-    if (value !== undefined && value !== null && String(value) !== "") {
-      input = String(value).trim();
-      break;
-    }
-  }
+  // Yemot can return the collected key in different parameters depending on
+  // the API call mode. Prefer the actual phone-input parameters over wm_nav.
+  const inputKeys = ["ApiPhoneInput", "Digits", "digits", "Choice", "ChoiceYesNo", "val", "choice", "wm_nav"];
+  const candidates = inputKeys
+    .map(key => get(key) ?? body[key])
+    .filter(value => value !== undefined && value !== null && String(value).trim() !== "")
+    .map(value => String(value).trim());
+  let input = candidates.find(value => /^[1-9]$/.test(value)) || candidates[0] || "";
   return {
     url,
     input,
